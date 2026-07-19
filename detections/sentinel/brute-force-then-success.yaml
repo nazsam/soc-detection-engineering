@@ -1,0 +1,48 @@
+id: 8a1f2c30-0001-4d5e-9b21-0a1b2c3d4e01
+name: Password spray followed by successful sign-in
+description: >
+  Detects an IP address generating many failed sign-ins (invalid credentials,
+  ResultType 50126) across accounts within an hour, followed by a successful
+  sign-in from the same IP — a classic password-spray-to-compromise pattern.
+severity: High
+requiredDataConnectors:
+  - connectorId: AzureActiveDirectory
+    dataTypes: [SigninLogs]
+queryFrequency: 1h
+queryPeriod: 1h
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - CredentialAccess
+  - InitialAccess
+relevantTechniques:
+  - T1110.003
+query: |
+  let failures =
+      SigninLogs
+      | where ResultType == "50126"          // invalid username or password
+      | summarize FailedCount = count(),
+                  TargetedUsers = dcount(UserPrincipalName),
+                  Apps = make_set(AppDisplayName, 10)
+        by IPAddress, bin(TimeGenerated, 1h)
+      | where FailedCount >= 10 and TargetedUsers >= 5;
+  let successes =
+      SigninLogs
+      | where ResultType == "0"
+      | project SuccessTime = TimeGenerated, IPAddress, UserPrincipalName, Location = tostring(LocationDetails.countryOrRegion);
+  failures
+  | join kind=inner successes on IPAddress
+  | where SuccessTime between (TimeGenerated .. (TimeGenerated + 1h))
+  | project TimeGenerated, IPAddress, FailedCount, TargetedUsers, CompromisedUser = UserPrincipalName, SuccessTime, Location, Apps
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: FullName
+        columnName: CompromisedUser
+  - entityType: IP
+    fieldMappings:
+      - identifier: Address
+        columnName: IPAddress
+tuning: >
+  Exclude known VPN/proxy egress IPs and vulnerability scanners. Raise thresholds
+  for large tenants. Pair with the "Compromised account" playbook on a true positive.

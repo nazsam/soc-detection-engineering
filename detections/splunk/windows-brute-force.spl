@@ -1,0 +1,16 @@
+``` Detection: Windows password spray / brute force (T1110)
+    Data: Windows Security event logs (EventCode 4625 = failed logon).
+    Logic: one source hitting many distinct accounts in a short window. ```
+
+index=wineventlog sourcetype=WinEventLog:Security EventCode=4625
+| bucket _time span=10m
+| stats count as failures
+        dc(Account_Name) as distinct_accounts
+        values(Account_Name) as targeted_accounts
+        by src_ip, _time
+| where failures > 20 AND distinct_accounts >= 5
+| sort - failures
+
+``` Follow-up: correlate with a subsequent EventCode 4624 (success) from the same
+    src_ip to confirm spray-to-compromise, then trigger the compromised-account playbook.
+    Tuning: allow-list service accounts / scanners; adjust thresholds per environment size. ```

@@ -1,0 +1,17 @@
+``` Detection: Mass file download / potential exfiltration (T1567)
+    Data: O365 / cloud audit (FileDownloaded, FileSyncDownloaded).
+    Logic: a user downloading an anomalous volume of files/bytes in one hour. ```
+
+index=o365 sourcetype="o365:management:activity"
+    Operation IN ("FileDownloaded","FileSyncDownloadedFull")
+| bucket _time span=1h
+| stats count as downloads
+        sum(eval(coalesce(ObjectSize,0))) as total_bytes
+        dc(SourceFileName) as distinct_files
+        by UserId, _time
+| eval total_MB = round(total_bytes/1024/1024, 1)
+| where downloads > 100 OR total_MB > 500
+| sort - downloads
+
+``` Enrich with the user's 30-day baseline; alert on deviation, not a fixed number.
+    On true positive: disable sessions, revoke tokens, engage DLP/legal, run IR playbook. ```

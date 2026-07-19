@@ -1,0 +1,51 @@
+id: 8a1f2c30-0004-4d5e-9b21-0a1b2c3d4e04
+name: Microsoft Defender AV tampering
+description: >
+  Detects attempts to disable Microsoft Defender real-time protection or exclude
+  paths via PowerShell/registry — a common defense-evasion step before payload
+  execution.
+severity: High
+requiredDataConnectors:
+  - connectorId: MicrosoftThreatProtection
+    dataTypes: [DeviceProcessEvents, DeviceRegistryEvents]
+queryFrequency: 15m
+queryPeriod: 15m
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562.001
+query: |
+  let procTamper =
+      DeviceProcessEvents
+      | where ProcessCommandLine has_any (
+            "Set-MpPreference", "Add-MpPreference", "MpCmdRun")
+        and ProcessCommandLine has_any (
+            "DisableRealtimeMonitoring", "DisableBehaviorMonitoring",
+            "DisableIOAVProtection", "ExclusionPath", "ExclusionProcess",
+            "DisableArchiveScanning")
+      | project TimeGenerated, DeviceName, AccountName, ActionType = "ProcessCmdLine",
+                Details = ProcessCommandLine, InitiatingProcessFileName;
+  let regTamper =
+      DeviceRegistryEvents
+      | where RegistryKey has @"Windows Defender"
+        and RegistryValueName in ("DisableAntiSpyware", "DisableRealtimeMonitoring")
+        and RegistryValueData == "1"
+      | project TimeGenerated, DeviceName, AccountName = InitiatingProcessAccountName,
+                ActionType = "RegistrySet",
+                Details = strcat(RegistryKey, "\\", RegistryValueName, "=", RegistryValueData),
+                InitiatingProcessFileName;
+  union procTamper, regTamper
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: DeviceName
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: AccountName
+tuning: >
+  Exclude approved software-deployment/SCCM accounts that legitimately set
+  exclusions. Any interactive-user tamper should be treated as high priority.

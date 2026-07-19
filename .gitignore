@@ -1,0 +1,11 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Never commit real IOCs / environment specifics
+*.local.*
+.env
+.env.*
+iocs-private/
